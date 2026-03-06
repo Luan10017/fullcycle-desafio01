@@ -1,0 +1,16 @@
+# Ignora arquivos de banco de dados
+/data/
+*.db
+
+# Binários compilados
+*.exe
+*.o
+*.a
+*.so
+app
+
+# Arquivos gerados
+*.swp
+*.swo
+*~
+.DS_Store
