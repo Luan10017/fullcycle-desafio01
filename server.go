@@ -2,14 +2,14 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 // CurrencyRate representa os campos de uma cotação
@@ -32,12 +32,26 @@ type ApiResponse struct {
 	USDBRL CurrencyRate `json:"USDBRL"`
 }
 
+type Cotacao struct {
+	ID   int `gorm:"primaryKey"`
+	rate CurrencyRate
+	gorm.Model
+}
+
+var db *gorm.DB
+
 func main() {
-	db, err := sql.Open("sqlite", "./data/app.db")
+	var err error
+	db, err = gorm.Open(sqlite.Open("./data/cotacao.db"), &gorm.Config{})
 	if err != nil {
 		fmt.Println("Error opening database:", err)
+		panic(err)
 	}
-	defer db.Close()
+
+	if err := db.AutoMigrate(&Cotacao{}); err != nil {
+		fmt.Println("Error migrating database:", err)
+		panic(err)
+	}
 
 	http.HandleFunc("/cotacao", BuscaCotacaoHandler)
 	http.ListenAndServe(":8080", nil)
@@ -45,6 +59,9 @@ func main() {
 }
 
 func BuscaCotacaoHandler(w http.ResponseWriter, r *http.Request) {
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Millisecond)
+	defer cancel()
 
 	if r.URL.Path != "/cotacao" {
 		w.WriteHeader(http.StatusNotFound)
@@ -55,6 +72,12 @@ func BuscaCotacaoHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "Error fetching data: %v", err)
+		return
+	}
+
+	if err := db.WithContext(ctx).Create(&Cotacao{rate: cotacao.USDBRL}).Error; err != nil {
+		fmt.Println("Error saving cotacao:", err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
