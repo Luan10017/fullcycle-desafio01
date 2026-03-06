@@ -1,0 +1,27 @@
+version: '3.9'
+
+services:
+  app:
+    build: .
+    environment:
+      - CGO_ENABLED=1
+    volumes:
+      - .:/app
+      - db_data:/app/cotacao.db
+    working_dir: /app
+    command: sh -c "go mod tidy && go run server.go"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+  # provê apenas volume persistente para o arquivo sqlite
+  db:
+    image: nouchka/sqlite3
+    volumes:
+      - db_data:/data
+    command: ["sleep","infinity"]
+
+volumes:
+  db_data:
+    driver: local
