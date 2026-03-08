@@ -2,14 +2,14 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
+	_ "modernc.org/sqlite"
 )
 
 // CurrencyRate representa os campos de uma cotação
@@ -32,24 +32,21 @@ type ApiResponse struct {
 	USDBRL CurrencyRate `json:"USDBRL"`
 }
 
-type Cotacao struct {
-	ID   int `gorm:"primaryKey"`
-	rate CurrencyRate
-	gorm.Model
-}
-
-var db *gorm.DB
+var db *sql.DB
+var stmtInsert *sql.Stmt
 
 func main() {
 	var err error
-	db, err = gorm.Open(sqlite.Open("./data/cotacao.db"), &gorm.Config{})
+	db, err = sql.Open("sqlite", "./data/cotacao.db")
 	if err != nil {
 		fmt.Println("Error opening database:", err)
 		panic(err)
 	}
+	defer db.Close()
 
-	if err := db.AutoMigrate(&Cotacao{}); err != nil {
-		fmt.Println("Error migrating database:", err)
+	stmtInsert, err = db.Prepare("INSERT INTO cotacaos (code, codein, name, high, low, var_bid, pct_change, bid, ask, timestamp, create_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		fmt.Println("Error preparing statement:", err)
 		panic(err)
 	}
 
@@ -59,9 +56,6 @@ func main() {
 }
 
 func BuscaCotacaoHandler(w http.ResponseWriter, r *http.Request) {
-
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Millisecond)
-	defer cancel()
 
 	if r.URL.Path != "/cotacao" {
 		w.WriteHeader(http.StatusNotFound)
@@ -75,8 +69,24 @@ func BuscaCotacaoHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := db.WithContext(ctx).Create(&Cotacao{rate: cotacao.USDBRL}).Error; err != nil {
-		fmt.Println("Error saving cotacao:", err)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	_, err = stmtInsert.ExecContext(ctx,
+		cotacao.USDBRL.Code,
+		cotacao.USDBRL.Codein,
+		cotacao.USDBRL.Name,
+		cotacao.USDBRL.High,
+		cotacao.USDBRL.Low,
+		cotacao.USDBRL.VarBid,
+		cotacao.USDBRL.PctChange,
+		cotacao.USDBRL.Bid,
+		cotacao.USDBRL.Ask,
+		cotacao.USDBRL.Timestamp,
+		cotacao.USDBRL.CreateDate,
+	)
+	if err != nil {
+		fmt.Println("Error executing statement:", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
